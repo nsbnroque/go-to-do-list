@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  neo4j:
+    image: neo4j
+    container_name: neo4j-container
+    environment:
+      NEO4J_AUTH: neo4j/supersecret  # Define o usuário e a senha
+    ports:
+      - "7474:7474"  # Porta para acesso ao navegador da web Neo4j
+      - "7687:7687"  # Porta para acesso à interface de comunicação com o Neo4j
+
