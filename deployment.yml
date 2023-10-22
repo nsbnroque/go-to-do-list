@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi  
+---
+apiVersion: v1
+kind: PersistentVolume
+spec:
+  containers:
+  - name: neo4j
+    image: neo4j:latest
+    ports:
+    - containerPort: 7474
+    - containerPort: 7687
+    env:
+    - name: NEO4J_AUTH
+      value: neo4j/supersecret
+    volumeMounts:
+    - name: neo4j-data
+      mountPath: /data
+volumes:
+- name: neo4j-data
+  persistentVolumeClaim:
+    claimName: neo4j-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neo4j
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neo4j
+  template:
+    metadata:
+      labels:
+        app: neo4j
+    spec:
+      containers:
+      - name: neo4j
+        image: neo4j:latest
+        ports:
+        - containerPort: 7474
+        - containerPort: 7687
+        env:
+        - name: NEO4J_AUTH
+          value: neo4j/supersecret
+          resources:
+          limits:
+            memory: "100Mi"  
+            cpu: "0.1"        
+          requests:
+            memory: "50Mi"    
+            cpu: "0.05"         
