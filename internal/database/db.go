@@ -1,11 +1,45 @@
 package database
 
 import (
+	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
+
+type DatabaseHandler struct {
+	Driver neo4j.DriverWithContext
+	Ctx    context.Context
+	Config *Neo4jConfiguration
+}
+
+var instance *DatabaseHandler
+var errConnectivity error
+
+func NewDatabaseHandler() (*DatabaseHandler, error) {
+	config := ParseConfiguration()
+
+	// Tentar estabelecer a conexão até 60 segundos
+	for i := 0; i < 30; i++ {
+		ctx := context.Background()
+		driver, err := config.NewDriver()
+
+		if err == nil {
+			return &DatabaseHandler{
+				Driver: driver,
+				Ctx:    ctx,
+				Config: config,
+			}, nil
+		}
+
+		errConnectivity = err // Atualiza o erro de conectividade
+		time.Sleep(time.Second)
+	}
+
+	return nil, errConnectivity
+}
 
 type Neo4jConfiguration struct {
 	Url      string

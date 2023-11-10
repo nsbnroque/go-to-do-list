@@ -23,3 +23,7 @@ type Task struct {
 	Status Status `json:"status"`
 	Reward int64  `json:"reward"`
 }
+
+type TaskList struct {
+	Tasks []Task
+}

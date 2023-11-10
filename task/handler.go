@@ -7,139 +7,172 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/nsbnroque/go-to-do-list/internal/database"
 )
 
-func CreateTaskHandler(ctx context.Context, driver neo4j.DriverWithContext, database string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail := r.URL.Query().Get("user")
+func CreateTaskHandler(c *gin.Context) {
+	dbHandler, err := database.NewDatabaseHandler()
 
-		var taskData Task
-		err := json.NewDecoder(r.Body).Decode(&taskData)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Erro ao decodificar dados da requisição: %v", err), http.StatusBadRequest)
-			log.Println(err.Error())
-			return
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Falha de conexão com o banco de dados",
+		})
+		return
+	}
+
+	userEmail := c.Query("user")
+
+	var taskData Task
+	if err := c.ShouldBindJSON(&taskData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Erro ao decodificar dados da requisição: %v", err),
+		})
+		log.Println(err.Error())
+		return
+	}
+
+	// Execute query
+	result, err := neo4j.ExecuteQuery(c.Request.Context(), dbHandler.Driver,
+		`MATCH (u:User {email: $email})-[:LIVES_IN]->(h:Home)
+		MERGE (t:Task {name: $name})
+		SET t.reward = $reward
+		MERGE (h)-[r:HAS_TASK]->(t)
+		ON MATCH SET r.status = $status
+		RETURN t.name as name, t.reward as reward, r.status as status;				
+		`,
+		map[string]interface{}{
+			"name":   taskData.Name,
+			"status": "pending",
+			"email":  userEmail,
+			"reward": taskData.Reward,
+		},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithDatabase(dbHandler.Config.Database),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Erro ao criar task: %v", err),
+		})
+		return
+	}
+
+	for _, record := range result.Records {
+		name, _ := record.Get("name")
+		reward, _ := record.Get("reward")
+		task := Task{
+			Name:   name.(string),
+			Reward: reward.(int64),
 		}
-		// Execute query
-		result, err := neo4j.ExecuteQuery(ctx, driver,
-			`MATCH (u:User {email: $email})
-			MERGE (t:Task {name: $name})
-				SET t.reward = $reward
-			MERGE (u)-[r:HAS_TASK]->(t)
-			ON MATCH SET r.status = $status
-			RETURN t.name as name, t.reward as reward, r.status as status;			
-			`,
-			map[string]interface{}{
-				"name":   taskData.Name,
-				"status": "pending",
-				"email":  userEmail,
-				"reward": taskData.Reward,
-			},
-			neo4j.EagerResultTransformer,
-			neo4j.ExecuteQueryWithDatabase(database),
-		)
-
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Erro ao criar task: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		for _, record := range result.Records {
-			name, _ := record.Get("name")
-			reward, _ := record.Get("reward")
-			task := Task{
-				Name:   name.(string),
-				Reward: reward.(int64),
-			}
-			// Enviar a lista de usuários como resposta
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(task)
-
-		}
+		// Enviar a lista de usuários como resposta
+		c.JSON(http.StatusOK, task)
 	}
 }
 
-func ChangeTaskHandler(ctx context.Context, driver neo4j.DriverWithContext, database string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail := r.URL.Query().Get("user")
+func ChangeTaskHandler(c *gin.Context) {
+	dbHandler, err := database.NewDatabaseHandler()
 
-		var taskData Task
-		err := json.NewDecoder(r.Body).Decode(&taskData)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Erro ao decodificar dados da requisição: %v", err), http.StatusBadRequest)
-			log.Println(err.Error())
-			return
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Falha de conexão com o banco de dados",
+		})
+		return
+	}
+
+	_, driver := dbHandler.Ctx, dbHandler.Driver
+	userEmail := c.Query("user")
+
+	var taskData Task
+	if err := c.ShouldBindJSON(&taskData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Erro ao decodificar dados da requisição: %v", err),
+		})
+		log.Println(err.Error())
+		return
+	}
+
+	// Execute query
+	result, err := neo4j.ExecuteQuery(c.Request.Context(), driver,
+		`MATCH (u:User {email: $email})
+		MATCH (t:Task {name: $name})
+			SET t.reward = $reward
+		MATCH (u)-[h:LIVES_IN]->(h)-[r:HAS_TASK]->(t)
+			SET r.status = $status
+		RETURN t.name as name, t.reward as reward, r.status as status;			
+		`,
+		map[string]interface{}{
+			"name":   taskData.Name,
+			"status": taskData.Status,
+			"reward": taskData.Reward,
+			"email":  userEmail,
+		},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithDatabase(dbHandler.Config.Database),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Erro ao criar task: %v", err),
+		})
+		return
+	}
+
+	for _, record := range result.Records {
+		name, _ := record.Get("name")
+		status, _ := record.Get("status")
+		reward, _ := record.Get("reward")
+		taskStatus := Status(status.(string))
+
+		task := Task{
+			Name:   name.(string),
+			Reward: reward.(int64),
+			Status: taskStatus,
 		}
-
-		// Execute query
-		result, err := neo4j.ExecuteQuery(ctx, driver,
-			`MATCH (u:User {email: $email})
-			MATCH (t:Task {name: $name})
-				SET t.reward = $reward
-			MATCH (u)-[r:HAS_TASK]->(t)
-				SET r.status = $status
-			RETURN t.name as name, t.reward as reward, r.status as status;			
-			`,
-			map[string]interface{}{
-				"name":   taskData.Name,
-				"status": taskData.Status,
-				"reward": taskData.Reward,
-				"email":  userEmail,
-			},
-			neo4j.EagerResultTransformer,
-			neo4j.ExecuteQueryWithDatabase(database),
-		)
-
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Erro ao criar task: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		for _, record := range result.Records {
-			name, _ := record.Get("name")
-			status, _ := record.Get("status")
-			reward, _ := record.Get("reward")
-			taskStatus := Status(status.(string))
-
-			task := Task{
-				Name:   name.(string),
-				Reward: reward.(int64),
-				Status: taskStatus,
-			}
-			// Enviar a lista de usuários como resposta
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(task)
-
-		}
+		// Enviar a lista de usuários como resposta
+		c.JSON(http.StatusOK, task)
 	}
 }
 
-func DeleteTaskHandler(ctx context.Context, driver neo4j.DriverWithContext, database string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userEmail := r.URL.Query().Get("user")
-		taskName := r.URL.Query().Get("task")
+func DeleteTaskHandler(c *gin.Context) {
+	dbHandler, err := database.NewDatabaseHandler()
 
-		// Execute query
-		_, err := neo4j.ExecuteQuery(ctx, driver,
-			`MATCH (u:User {email: $email})
-			MATCH (t:Task {name: $taskName})
-			MATCH (u)-[r:HAS_TASK]->(t)
-			DETACH DELETE t;			
-			`,
-			map[string]interface{}{
-				"taskName": taskName,
-				"email":    userEmail,
-			},
-			neo4j.EagerResultTransformer,
-			neo4j.ExecuteQueryWithDatabase(database),
-		)
-
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Erro ao excluir a tarefa: %v", err), http.StatusInternalServerError)
-			return
-		}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Falha de conexão com o banco de dados",
+		})
+		return
 	}
+
+	userEmail := c.Query("user")
+	taskName := c.Query("task")
+
+	// Execute query
+	_, err = neo4j.ExecuteQuery(c.Request.Context(), dbHandler.Driver,
+		`MATCH (u:User {email: $email})
+		MATCH (t:Task {name: $taskName})
+		MATCH (u)-[r:HAS_TASK]->(t)
+		DETACH DELETE t;			
+		`,
+		map[string]interface{}{
+			"taskName": taskName,
+			"email":    userEmail,
+		},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithDatabase(dbHandler.Config.Database),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Erro ao excluir a tarefa: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Tarefa %s excluída com sucesso!", taskName),
+	})
 }
 
 func GetTasksForUserHandler(ctx context.Context, driver neo4j.DriverWithContext, database string) http.HandlerFunc {

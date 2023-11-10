@@ -1,21 +1,25 @@
-# Use a imagem base do Go
 FROM golang:1.21
 
-# Configure o diretório de trabalho dentro do contêiner
+# Set destination for COPY
 WORKDIR /app
 
-# Copie o arquivo go.mod e go.sum para o contêiner
-COPY ./go.mod ./
-COPY ./go.sum ./
+# Set the value for NEO4J_URI
+ENV NEO4J_URI="bolt://localhost:7687"
 
-# Baixe as dependências do módulo Go
+# Download Go modules
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copie os arquivos do aplicativo para o contêiner
-COPY ./cmd/go-to-do-list/*.go ./
+# Copy the source code. 
+COPY . .
+
+# Specify the working directory where you want to run the build command
+WORKDIR /app/cmd/go-to-do-list
 
 # Compilar o aplicativo Go
-RUN go build -o to-do-list
+RUN go build
+
+EXPOSE 8081
 
 # Inicializar o aplicativo quando o contêiner iniciar
-CMD ["./to-do-list"]
+CMD ["./go-to-do-list"]

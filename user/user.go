@@ -11,7 +11,7 @@ type User struct {
 	Name     string `json:"name" validate:"nonzero"`
 	Email    string `json:"email" validate:"nonzero"`
 	Password string `json:"password" validate:"nonzero,min=8"`
-	Home     string `json:"home"`
+	Score    int64  `json:"score"`
 }
 
 func ValidateUser(user *User) error {

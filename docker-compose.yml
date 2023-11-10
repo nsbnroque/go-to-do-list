@@ -5,8 +5,25 @@ services:
     image: neo4j
     container_name: neo4j-container
     environment:
-      NEO4J_AUTH: neo4j/supersecret  # Define o usuário e a senha
+      NEO4J_AUTH: neo4j/supersecret
     ports:
-      - "7474:7474"  # Porta para acesso ao navegador da web Neo4j
-      - "7687:7687"  # Porta para acesso à interface de comunicação com o Neo4j
+      - "7474:7474"
+      - "7687:7687"
+    networks:
+      - app-network
 
+  app:
+    depends_on: 
+      - neo4j
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app-container
+    environment:
+      NEO4J_URI: "bolt://neo4j:7687"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

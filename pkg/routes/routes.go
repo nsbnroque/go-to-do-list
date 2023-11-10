@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"log"
 
 	"github.com/gin-contrib/cors"
@@ -13,18 +12,9 @@ import (
 )
 
 func HandleRequests() {
-	ctx := context.Background()
-	configuration := database.ParseConfiguration()
-	driver, err := configuration.NewDriver()
+	dbHandler, err := database.NewDatabaseHandler()
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = driver.VerifyConnectivity(ctx)
-	if err != nil {
-		log.Fatalf("Falha na conexão: %v", err)
-	} else {
-		log.Println("Conexão bem-sucedida!")
+		log.Fatalf("Falha ao obter o handler do banco de dados: %v", err)
 	}
 
 	r := gin.Default()
@@ -34,38 +24,19 @@ func HandleRequests() {
 	config.AllowMethods = []string{"GET", "POST", "PATCH", "DELETE"}
 	r.Use(cors.New(config))
 
-	r.POST("/users", func(c *gin.Context) {
-		user.CreateUserHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.GET("/users", func(c *gin.Context) {
-		user.FindAllUsersHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.GET("/users/find", func(c *gin.Context) {
-		user.FindByEmailHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.PUT("/users", func(c *gin.Context) {
-		user.UpdateUserHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.POST("/tasks", func(c *gin.Context) {
-		task.CreateTaskHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.PUT("/tasks", func(c *gin.Context) {
-		task.ChangeTaskHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.DELETE("/tasks", func(c *gin.Context) {
-		task.DeleteTaskHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
+	r.POST("/users", user.CreateUserHandler)
+	r.GET("/users", user.FindAllUsersHandler)
+	r.GET("/users/find", user.FindByEmailHandler)
+	r.PUT("/users", user.UpdateUserHandler)
+	r.POST("/tasks", task.CreateTaskHandler)
+	r.PUT("/tasks", task.ChangeTaskHandler)
+	r.DELETE("/tasks", task.DeleteTaskHandler)
 	r.GET("/tasks", func(c *gin.Context) {
-		task.GetTasksForUserHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
+		task.GetTasksForUserHandler(dbHandler.Ctx, dbHandler.Driver, dbHandler.Config.Database)(c.Writer, c.Request)
 	})
-	r.POST("/homes", func(c *gin.Context) {
-		home.CreateHomeHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.PATCH("/homes", func(c *gin.Context) {
-		home.AddResidentToHomeHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
-	r.GET("/homes", func(c *gin.Context) {
-		home.GetHomeHandler(ctx, driver, database.ParseConfiguration().Database)(c.Writer, c.Request)
-	})
+	r.POST("/home", home.CreateHomeHandler)
+	r.PATCH("/home", home.AddResidentToHomeHandler)
+	r.GET("/home", home.GetHomeHandler)
+	r.DELETE("/home/:id", home.DeleteHomeHandler)
 	r.Run()
 }
